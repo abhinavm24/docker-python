@@ -1,5 +1,5 @@
-FROM nvidia/cuda:9.1-cudnn7-devel-ubuntu16.04 AS nvidia
-FROM continuumio/anaconda3:5.0.1
+FROM nvidia/cuda:9.2-cudnn7-devel-ubuntu16.04 AS nvidia
+FROM continuumio/anaconda3:5.2.0
 
 # Avoid interactive configuration prompts/dialogs during apt-get.
 ENV DEBIAN_FRONTEND=noninteractive
@@ -15,8 +15,8 @@ COPY --from=nvidia /etc/apt/trusted.gpg /etc/apt/trusted.gpg.d/cuda.gpg
 
 # Ensure the cuda libraries are compatible with the GPU image.
 # TODO(b/120050292): Use templating to keep in sync.
-ENV CUDA_VERSION=9.1.85
-ENV CUDA_PKG_VERSION=9-1=$CUDA_VERSION-1
+ENV CUDA_VERSION=9.2.148
+ENV CUDA_PKG_VERSION=9-2=$CUDA_VERSION-1
 LABEL com.nvidia.volumes.needed="nvidia_driver"
 LABEL com.nvidia.cuda.version="${CUDA_VERSION}"
 ENV PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
@@ -38,27 +38,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       cuda-nvml-dev-$CUDA_PKG_VERSION \
       cuda-minimal-build-$CUDA_PKG_VERSION \
       cuda-command-line-tools-$CUDA_PKG_VERSION \
-      libcudnn7=7.2.1.38-1+cuda9.0 \
-      libcudnn7-dev=7.2.1.38-1+cuda9.0 \
-      libnccl2=2.2.12-1+cuda9.1 \
-      libnccl-dev=2.2.12-1+cuda9.1 && \
-    ln -s /usr/local/cuda-9.1 /usr/local/cuda && \
+      libcudnn7=7.4.1.5-1+cuda9.2 \
+      libcudnn7-dev=7.4.1.5-1+cuda9.2 \
+      libnccl2=2.3.7-1+cuda9.2 \
+      libnccl-dev=2.3.7-1+cuda9.2 && \
+    ln -s /usr/local/cuda-9.2 /usr/local/cuda && \
     ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1 && \
     rm -rf /var/lib/apt/lists/*
 
-# Install bazel
-RUN apt-get update && apt-get install -y python-software-properties zip && \
+RUN apt-get update && apt-get install -y gnupg zip && \
     echo "deb http://ppa.launchpad.net/webupd8team/java/ubuntu precise main" | tee -a /etc/apt/sources.list && \
     echo "deb-src http://ppa.launchpad.net/webupd8team/java/ubuntu precise main" | tee -a /etc/apt/sources.list && \
-    apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys EEA14886 C857C906 2B90D010 && \
+    apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys --no-tty EEA14886 C857C906 2B90D010 && \
     apt-get update && \
     echo debconf shared/accepted-oracle-license-v1-1 select true | debconf-set-selections && \
     echo debconf shared/accepted-oracle-license-v1-1 seen true | debconf-set-selections && \
     apt-get install -y oracle-java8-installer && \
-    echo "deb [arch=amd64] http://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \
-    curl https://bazel.build/bazel-release.pub.gpg | apt-key add - && \
-    apt-get update && apt-get install -y bazel && \
-    apt-get upgrade -y bazel
+    # Bazel installation instructions: https://docs.bazel.build/versions/master/install-ubuntu.html
+    # Tensorflow 1.12 requires the 0.15 (older) version of bazel: https://www.tensorflow.org/install/source
+    mkdir -p /usr/local/src/bazel && cd /usr/local/src && \
+    wget --no-verbose https://github.com/bazelbuild/bazel/releases/download/0.15.2/bazel-0.15.2-installer-linux-x86_64.sh && \
+    chmod +x bazel-0.15.2-installer-linux-x86_64.sh && \
+    ./bazel-0.15.2-installer-linux-x86_64.sh
 
 # Tensorflow doesn't support python 3.7 yet. See https://github.com/tensorflow/tensorflow/issues/20517
 RUN conda install -y python=3.6.6 && \
@@ -70,7 +71,7 @@ RUN conda install -y python=3.6.6 && \
 RUN cd /usr/local/src && \
     git clone https://github.com/tensorflow/tensorflow && \
     cd tensorflow && \
-    git checkout r1.11
+    git checkout r1.12
 
 # Create a tensorflow wheel for CPU
 RUN cd /usr/local/src/tensorflow && \
@@ -81,7 +82,7 @@ RUN cd /usr/local/src/tensorflow && \
 
 # Create a tensorflow wheel for GPU/cuda
 ENV TF_NEED_CUDA=1
-ENV TF_CUDA_VERSION=9.1
+ENV TF_CUDA_VERSION=9.2
 ENV TF_CUDA_COMPUTE_CAPABILITIES=3.7,6.0
 ENV TF_CUDNN_VERSION=7
 ENV TF_NCCL_VERSION=2
